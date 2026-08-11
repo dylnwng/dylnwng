@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Morning Lockout",
+    "slug": "morning-lockout",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "scheme": "morninglockout",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.dylnwng.morninglockout",
+      "infoPlist": {
+        "UIBackgroundModes": ["audio", "fetch"],
+        "NSMotionUsageDescription": "Morning Lockout checks your step count to verify you've moved before unlocking your phone."
+      }
+    },
+    "android": {
+      "package": "com.dylnwng.morninglockout",
+      "permissions": [
+        "SYSTEM_ALERT_WINDOW",
+        "FOREGROUND_SERVICE",
+        "RECEIVE_BOOT_COMPLETED",
+        "ACTIVITY_RECOGNITION",
+        "SCHEDULE_EXACT_ALARM",
+        "USE_FULL_SCREEN_INTENT"
+      ]
+    },
+    "plugins": ["expo-router"]
+  }
+}
