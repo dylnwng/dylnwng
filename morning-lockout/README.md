@@ -18,7 +18,23 @@ Scaffold, not a working app yet:
 
 ## Setup
 
-Requires a Mac with Xcode (26+, for AlarmKit) and a personal Apple ID.
+Editing the code doesn't require a Mac — it's plain Swift/SwiftUI, VS Code with a Swift extension (or even no extension) works fine for that. Two separate things *do* require Apple's toolchain, and there's no way around either — this isn't a tooling preference, it's how iOS code signing and the simulator/device build pipeline work:
+
+1. **Compiling against the real SDKs.** AlarmKit and FamilyControls in this scaffold were written without access to Xcode, so they need to actually build once to find out what's wrong.
+2. **Signing and installing to your iPhone.** Requires an Apple ID (and ideally the paid Developer Program, see below) and `codesign`/provisioning, which only exist inside Xcode's toolchain.
+
+### No Mac at all: use CI for (1), a cloud Mac only when you need (2)
+
+[`.github/workflows/morning-lockout-ios-build.yml`](../.github/workflows/morning-lockout-ios-build.yml) builds this app on GitHub's free macOS runners on every push to `morning-lockout/**` — no signing needed, since it targets the Simulator destination. Push a change, check the Actions tab: green means it compiles against the real AlarmKit/FamilyControls SDKs, red means the guessed API calls in `AlarmScheduler.swift`/`AppShield.swift` need fixing, with a real compiler error to go on instead of my best guess. This is genuinely the whole "does this compile" question answered without touching a Mac.
+
+Getting it onto your actual iPhone (step 2) is a separate problem CI can't solve for free — signing needs your Apple ID's private key, which shouldn't live in CI secrets for a personal project. The practical options, cheapest first:
+- **Borrow a Mac for 15 minutes** — you only need it long enough to open Xcode, sign in with your Apple ID, and do `xcodebuild -exportArchive`/plain "Run" once (or periodically, if you go the free-account 7-day-expiry route below).
+- **Rent a cloud Mac by the hour** (e.g. MacinCloud, MacStadium) — a few dollars for a one-off session to build, sign, and install over USB or wireless debugging.
+- **Automate signing in CI anyway**, using [Fastlane match](https://docs.fastlane.tools/actions/match/) to store an encrypted signing identity as a GitHub secret, then sideload the resulting `.ipa` with [AltStore](https://altstore.io) or [SideStore](https://sidestore.io) (both install from a Windows/Linux/Mac companion app, no Xcode needed for the *install* step, just for producing the signed build once). More setup, but means never touching a Mac again after the initial cert generation — worth it only if you want, e.g. automatic rebuilds when `alarmTime` logic changes.
+
+### If you do have a Mac (even without Xcode installed yet)
+
+Xcode is a free App Store install — after that, everything else is normal:
 
 ```bash
 brew install xcodegen
@@ -57,7 +73,7 @@ MorningLockoutMonitor/             DeviceActivityMonitor extension target
 
 ## Next steps (in order)
 
-1. `xcodegen generate`, open in Xcode, fix whatever doesn't compile against the real AlarmKit/FamilyControls SDKs.
+1. Push to `main` (or open a PR) and watch the `morning-lockout-ios-build` CI run — fix whatever doesn't compile against the real AlarmKit/FamilyControls SDKs. No Mac needed for this step.
 2. Get the Family Controls picker + `.all(except:)` shield policy actually excluding this app's own token — that's the piece most likely to need a different exact API than what's sketched here.
 3. Wire `AppViewModel.alarmDidFire(alarmID:)` up to whatever AlarmKit actually calls when the alarm fires/the app is opened from the alert — right now nothing invokes it, since that hook depends on confirming AlarmKit's real API in step 1.
-4. Build to your iPhone (Simulator has no pedometer hardware, so the activity gate can't be meaningfully tested there), enable the Developer Program if you haven't, and test one real morning end-to-end (alarm → dismissal challenge → gate → unlock) before trusting it daily.
+4. Once CI is green, get the app onto your iPhone by one of the routes in Setup above (borrowed Mac, cloud Mac, or Fastlane match + AltStore/SideStore), enable the Developer Program if you haven't, and test one real morning end-to-end (alarm → dismissal challenge → gate → unlock) before trusting it daily. Simulator has no pedometer hardware, so the activity gate specifically can't be meaningfully tested until it's on a real device.

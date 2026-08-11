@@ -1,0 +1,65 @@
+name: Morning Lockout — iOS build check
+
+# Compiles the Morning Lockout app against the real Apple SDKs on a GitHub-hosted
+# macOS runner. This exists specifically so the app can be worked on entirely from
+# VS Code (or any editor) with no local Mac/Xcode: push a change and this tells you
+# whether it actually compiles, including whether the AlarmKit/FamilyControls calls
+# in AlarmScheduler.swift and AppShield.swift (written without access to a real Mac —
+# see morning-lockout/README.md) match the real API surface.
+#
+# This builds for the Simulator destination only, so no code signing / Apple
+# Developer account / provisioning profile is needed for this workflow. Getting the
+# app onto an actual iPhone is a separate, later step that does need signing —
+# see morning-lockout/README.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "morning-lockout/**"
+      - ".github/workflows/morning-lockout-ios-build.yml"
+  pull_request:
+    paths:
+      - "morning-lockout/**"
+      - ".github/workflows/morning-lockout-ios-build.yml"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    # Update this if GitHub's macOS runner images move past what's available when
+    # you're reading this — `xcodebuild -version` in the logs will tell you what
+    # actually got picked. iOS 26 / AlarmKit needs an Xcode version that ships the
+    # iOS 26 SDK; if this runner's preinstalled Xcode is older than that, the build
+    # step below will fail with a clear "SDK not found" style error rather than
+    # something confusing.
+    runs-on: macos-15
+
+    defaults:
+      run:
+        working-directory: morning-lockout
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show available Xcode versions
+        run: ls /Applications | grep -i xcode
+
+      - name: Select latest available Xcode
+        run: sudo xcode-select -switch /Applications/Xcode.app
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build for Simulator (no code signing required)
+        run: |
+          xcodebuild build \
+            -project MorningLockout.xcodeproj \
+            -scheme MorningLockout \
+            -destination "generic/platform=iOS Simulator" \
+            CODE_SIGNING_ALLOWED=NO
