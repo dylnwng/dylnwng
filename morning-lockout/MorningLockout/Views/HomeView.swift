@@ -15,6 +15,12 @@ struct HomeView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
 
+                if viewModel.isPausedToday {
+                    Label("Paused for today", systemImage: "pause.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
                 Button("Settings") { showingSettings = true }
                     .buttonStyle(.borderedProminent)
             }

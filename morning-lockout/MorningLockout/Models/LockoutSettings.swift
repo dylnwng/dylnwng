@@ -17,6 +17,7 @@ struct LockoutSettings: Codable, Equatable {
     var activityType: ActivityVerificationType
     var dismissalChallenge: DismissalChallengeType
     var dismissalStepTarget: Int
+    var dismissalMathProblemCount: Int
     var dismissalGraceMinutes: Int
 
     static let `default` = LockoutSettings(
@@ -26,8 +27,10 @@ struct LockoutSettings: Codable, Equatable {
         activityType: .steps,
         dismissalChallenge: .steps,
         dismissalStepTarget: 50,
+        dismissalMathProblemCount: 5,
         dismissalGraceMinutes: 2
     )
 
     static let lockoutMinutesRange = 5...90
+    static let dismissalMathProblemCountRange = 1...15
 }

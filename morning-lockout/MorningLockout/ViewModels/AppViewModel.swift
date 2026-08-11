@@ -12,6 +12,15 @@ final class AppViewModel: ObservableObject {
     /// progress.activityProgress once the gate starts, so steps taken to silence the alarm count
     /// toward the gate target instead of being thrown away.
     @Published var stepsSinceAlarm = 0
+    /// Math dismissal challenge state (used when settings.dismissalChallenge == .math).
+    @Published var currentMathProblem: MathProblem?
+    @Published var mathProblemsSolved = 0
+    /// Set (with a timestamp) when the user pauses enforcement for today via the two-step
+    /// confirmation in Settings. Self-expiring: isPausedToday only reads true on the calendar
+    /// day it was set, so there's no separate "resume" step required the next morning.
+    @Published private(set) var pausedDate: Date? {
+        didSet { Self.savePausedDate(pausedDate) }
+    }
 
     private let alarmScheduler: AlarmScheduling
     private let activityMonitor: ActivityMonitoring
@@ -19,6 +28,7 @@ final class AppViewModel: ObservableObject {
     private var lockoutTimer: Timer?
 
     private static let settingsKey = "morningLockout.settings"
+    private static let pausedDateKey = "morningLockout.pausedDate"
 
     init(
         alarmScheduler: AlarmScheduling = AlarmScheduler(),
@@ -31,9 +41,26 @@ final class AppViewModel: ObservableObject {
             lockoutTargetSeconds: loaded.lockoutMinutes * 60,
             activityTarget: loaded.activityTarget
         )
+        self.pausedDate = Self.loadPausedDate()
         self.alarmScheduler = alarmScheduler
         self.activityMonitor = activityMonitor
         self.appShield = appShield
+    }
+
+    var isPausedToday: Bool {
+        guard let pausedDate else { return false }
+        return Calendar.current.isDateInToday(pausedDate)
+    }
+
+    /// Pauses lockout+gate enforcement for the rest of today only. The alarm still rings and
+    /// still requires the dismissal challenge — this skips the *lockout*, not the wake-up.
+    /// Intentionally only reachable via a two-step confirmation in Settings, not a one-tap toggle.
+    func pauseForToday() {
+        pausedDate = Date()
+    }
+
+    func resumeEnforcementToday() {
+        pausedDate = nil
     }
 
     func updateSettings(_ newSettings: LockoutSettings) {
@@ -56,17 +83,36 @@ final class AppViewModel: ObservableObject {
         currentAlarmID = alarmID
         phase = .alarming
         stepsSinceAlarm = 0
+        mathProblemsSolved = 0
+        currentMathProblem = nil
 
-        guard settings.dismissalChallenge == .steps else { return }
-        let gateTarget = max(settings.dismissalStepTarget, settings.activityTarget)
-        activityMonitor.startTracking(type: .steps, target: gateTarget) { [weak self] value in
-            guard let self else { return }
-            self.stepsSinceAlarm = value
-            if self.phase == .gated {
-                self.progress.activityProgress = value
-                self.checkGate()
+        switch settings.dismissalChallenge {
+        case .steps:
+            let gateTarget = max(settings.dismissalStepTarget, settings.activityTarget)
+            activityMonitor.startTracking(type: .steps, target: gateTarget) { [weak self] value in
+                guard let self else { return }
+                self.stepsSinceAlarm = value
+                if self.phase == .gated {
+                    self.progress.activityProgress = value
+                    self.checkGate()
+                }
             }
+        case .math:
+            currentMathProblem = MathProblem.generate(index: 1)
         }
+    }
+
+    /// Checks a submitted answer against the current math problem. Returns whether it was
+    /// correct so AlarmView can show feedback. Advances to the next (harder) problem on a
+    /// correct answer; a wrong answer doesn't lose progress, it just doesn't advance.
+    @discardableResult
+    func submitMathAnswer(_ value: Int) -> Bool {
+        guard let problem = currentMathProblem, value == problem.answer else { return false }
+        mathProblemsSolved += 1
+        currentMathProblem = mathProblemsSolved < settings.dismissalMathProblemCount
+            ? MathProblem.generate(index: mathProblemsSolved + 1)
+            : nil
+        return true
     }
 
     /// Whether the configured dismissal challenge has actually been completed. AlarmView disables
@@ -77,14 +123,20 @@ final class AppViewModel: ObservableObject {
         case .steps:
             return stepsSinceAlarm >= settings.dismissalStepTarget
         case .math:
-            return false // TODO: math challenge not implemented yet
+            return mathProblemsSolved >= settings.dismissalMathProblemCount
         }
     }
 
     /// Called when the user taps dismiss. No-ops unless the challenge is genuinely complete.
+    /// If today is paused (see pauseForToday()), the alarm and its challenge still had to be
+    /// completed, but dismissing skips straight past the lockout/activity gate.
     func dismissAlarm() {
         guard dismissalChallengeComplete, let alarmID = currentAlarmID else { return }
         Task { try? await alarmScheduler.stopRinging(alarmID: alarmID) }
+        guard !isPausedToday else {
+            phase = .unlocked
+            return
+        }
         beginGate()
     }
 
@@ -135,5 +187,17 @@ final class AppViewModel: ObservableObject {
     private static func saveSettings(_ settings: LockoutSettings) {
         guard let data = try? JSONEncoder().encode(settings) else { return }
         UserDefaults.standard.set(data, forKey: settingsKey)
+    }
+
+    private static func loadPausedDate() -> Date? {
+        UserDefaults.standard.object(forKey: pausedDateKey) as? Date
+    }
+
+    private static func savePausedDate(_ date: Date?) {
+        guard let date else {
+            UserDefaults.standard.removeObject(forKey: pausedDateKey)
+            return
+        }
+        UserDefaults.standard.set(date, forKey: pausedDateKey)
     }
 }
