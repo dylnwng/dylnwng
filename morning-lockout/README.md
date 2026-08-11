@@ -11,7 +11,8 @@ Scaffold, not a working app yet:
 - ✅ PRD
 - ✅ Swift/SwiftUI app structure: models, `AppViewModel`, all four screens (Onboarding, Home, Alarm, Gate, Settings), and service protocols for the three system-framework integrations
 - ✅ `DeviceActivityMonitor` extension target (`MorningLockoutMonitor`) so the shield survives the main app not running
-- ⬜ **Not compiled.** This was written without access to Xcode/macOS, so treat it as a first draft to open in Xcode and fix up against the real SDKs — particularly `AlarmScheduler.swift` (AlarmKit is new and its exact API surface should be checked against current docs) and the `.all(except:)` call in `AppShield.swift`.
+- ✅ Physical activity gate is wired end-to-end and real, not a placeholder: `ActivityMonitor` runs a live `CMPedometer` session starting the moment the alarm fires, `AlarmView` reads that live count for the dismissal challenge instead of a fake counter, and the same session carries its steps straight into the lockout gate's `activityProgress` on transition — so steps walked to silence the alarm count toward the gate instead of resetting to zero. Falls back to accelerometer-based motion detection (`CMMotionActivityManager`) if step counting is unavailable or denied, so there's always a path to unlocking. The one intentional cheat-adjacent bit — a manual step-increment button — only compiles into Simulator builds (`#if targetEnvironment(simulator)`), never a real device, since a bypass button has no business existing on the phone this app is supposed to gate.
+- ⬜ **Not compiled.** This was written without access to Xcode/macOS, so treat it as a first draft to open in Xcode and fix up against the real SDKs — particularly `AlarmScheduler.swift` (AlarmKit is new and its exact API surface should be checked against current docs) and the `.all(except:)` call in `AppShield.swift`. `ActivityMonitor`/`AppViewModel`'s activity-tracking logic is plain CoreMotion + state machine code and is the part of the scaffold I'd trust most to compile close to as-written.
 
 ## Setup
 
@@ -56,5 +57,6 @@ MorningLockoutMonitor/             DeviceActivityMonitor extension target
 
 1. `xcodegen generate`, open in Xcode, fix whatever doesn't compile against the real AlarmKit/FamilyControls SDKs.
 2. Get the Family Controls picker + `.all(except:)` shield policy actually excluding this app's own token — that's the piece most likely to need a different exact API than what's sketched here.
-3. Build to your iPhone, enable the Developer Program if you haven't, and test one real morning end-to-end (alarm → dismissal challenge → gate → unlock) before trusting it daily.
-4. Once the core loop works, revisit the math-challenge dismissal fallback and the "pause for today" two-step confirmation from PRD §6.4 — both are in the spec but not yet in the scaffold.
+3. Wire `AppViewModel.alarmDidFire(alarmID:)` up to whatever AlarmKit actually calls when the alarm fires/the app is opened from the alert — right now nothing invokes it, since that hook depends on confirming AlarmKit's real API in step 1.
+4. Build to your iPhone (Simulator has no pedometer hardware, so the activity gate can't be meaningfully tested there), enable the Developer Program if you haven't, and test one real morning end-to-end (alarm → dismissal challenge → gate → unlock) before trusting it daily.
+5. Once the core loop works, revisit the math-challenge dismissal fallback and the "pause for today" two-step confirmation from PRD §6.4 — both are in the spec but not yet in the scaffold.

@@ -5,10 +5,10 @@ import SwiftUI
 /// button, no swipe-to-dismiss on purpose.
 struct AlarmView: View {
     @EnvironmentObject private var viewModel: AppViewModel
-    @State private var stepsWalked = 0
 
     private var target: Int { viewModel.settings.dismissalStepTarget }
-    private var challengeComplete: Bool { stepsWalked >= target }
+    private var stepsWalked: Int { viewModel.stepsSinceAlarm }
+    private var challengeComplete: Bool { viewModel.dismissalChallengeComplete }
 
     var body: some View {
         ZStack {
@@ -24,18 +24,21 @@ struct AlarmView: View {
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
 
-                Text("\(stepsWalked) / \(target) steps")
+                Text("\(min(stepsWalked, target)) / \(target) steps")
                     .font(.title2.bold())
                     .foregroundStyle(.white)
 
-                // Dev-only simulator button — replace with real ActivityMonitor progress callback
-                // once this is wired up to run against a physical device.
-                Button("+10 steps (dev-only simulator)") { stepsWalked += 10 }
+                #if targetEnvironment(simulator)
+                // Simulator has no real pedometer hardware, so CMPedometer never reports steps
+                // there — this button exists only so the flow is testable without a device.
+                // Compiled out of every real-device build, debug or release: a step-count cheat
+                // button has no business existing on the phone this app is supposed to gate.
+                Button("+10 steps (simulator only)") { viewModel.stepsSinceAlarm += 10 }
                     .buttonStyle(.bordered)
                     .tint(.white)
+                #endif
 
                 Button(challengeComplete ? "Dismiss alarm" : "Keep moving...") {
-                    guard challengeComplete else { return }
                     viewModel.dismissAlarm()
                 }
                 .buttonStyle(.borderedProminent)
