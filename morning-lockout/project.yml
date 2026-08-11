@@ -1,0 +1,55 @@
+name: MorningLockout
+options:
+  bundleIdPrefix: com.dylnwng
+  deploymentTarget:
+    iOS: "26.0"
+
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    DEVELOPMENT_TEAM: "" # fill in with your personal team ID in Xcode > Signing & Capabilities
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  MorningLockout:
+    type: application
+    platform: iOS
+    sources:
+      - path: MorningLockout
+    info:
+      path: MorningLockout/Info.plist
+      properties:
+        UIBackgroundModes: [audio]
+        NSMotionUsageDescription: "Morning Lockout checks your step count to verify you've moved before unlocking your phone."
+        UILaunchScreen: {}
+    entitlements:
+      path: MorningLockout/MorningLockout.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+    dependencies:
+      - target: MorningLockoutMonitor
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dylnwng.morninglockout
+        TARGETED_DEVICE_FAMILY: "1" # iPhone only
+
+  MorningLockoutMonitor:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: MorningLockoutMonitor
+    info:
+      path: MorningLockoutMonitor/Info.plist
+      properties:
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.deviceactivity.monitor-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShieldMonitor
+    entitlements:
+      path: MorningLockoutMonitor/MorningLockoutMonitor.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dylnwng.morninglockout.monitor
+        SKIP_INSTALL: true

@@ -1,114 +1,107 @@
 # Product Requirements Document: Morning Lockout
 
-**Status:** Draft v1
+**Status:** Draft v2 — refocused on iOS, personal use only
 **Author:** Dylan Wang (drafted with Claude)
 **Last updated:** 2026-08-11
 
 ## 1. Problem
 
-Phones get picked up within seconds of waking up, and that first scroll sets the tone (and the pace) for the rest of the day. The goal of this app is to force a better first 30 minutes: no notifications, no doomscrolling, no email, until (a) a fixed lockout window has passed and (b) the user has done some minimum amount of physical activity. On top of that, mornings only work if the person actually gets up — so the app needs an alarm that cannot be casually swiped away or silenced.
+Phones get picked up within seconds of waking up, and that first scroll sets the tone (and the pace) for the rest of the day. This app forces a better first 30 minutes on my own phone: no apps, no notifications, no doomscrolling, until (a) a fixed lockout window has passed and (b) I've done some minimum amount of physical activity. Mornings only work if I actually get up, so it also needs an alarm that can't be casually swiped away or silenced.
 
-## 2. Goals
+## 2. Scope: personal use, iOS only
 
-- Prevent normal phone use (apps, browser, notifications) for a fixed window after the alarm fires — default 30 minutes, user-configurable.
-- Require a minimum amount of verified physical activity (steps, sustained movement, or an equivalent challenge) before the lockout lifts, even if the 30 minutes have elapsed.
-- Ship an alarm that is very hard to defeat: it ignores silent/mute switches and Do Not Disturb, escalates in volume, survives the app being force-closed or the phone rebooting, and requires an active dismissal task (not a tap) to stop.
-- Give the user an honest, low-friction setup: activity target, lockout duration, and alarm dismissal challenge are all configurable.
+This is a single-user app for my own iPhone, sideloaded via Xcode with my personal Apple ID — **not** distributed on the App Store. That one decision simplifies almost everything:
 
-## 3. Non-goals (v1)
+- No App Review to pass, and no risk of Apple rejecting a "blocking" app or pulling it later — self-distribution isn't reviewed.
+- No need to build or maintain an Android version. v1 is iOS-only.
+- No need for React Native / cross-platform tooling. The features that matter (a real alarm, blocking other apps, verifying steps) are all iOS system frameworks — going straight native in Swift/SwiftUI means no JS-to-native bridge layer to build and debug for zero benefit.
 
-- Not a general-purpose screen-time / parental-control suite. No multi-user management, no remote (parent-controls-child) administration.
-- Not a fitness tracker. We verify "did movement happen," not detailed workout metrics.
-- Not a notification-management tool outside the lockout window — after the window and activity target are satisfied, the phone behaves normally.
-- Not attempting to block a *specific list* of apps by category (social media, etc.) — v1 blocks everything except the app itself and true essentials (phone/emergency dialer), because partial blocking is trivially bypassed by opening a non-blocked app.
+The only real constraint left is the standard iOS provisioning tradeoff: a free Apple ID can sign and install the app to your own device, but the build expires after 7 days and has to be reinstalled from Xcode. Enrolling in the Apple Developer Program ($99/year) removes that limit (1-year signing) and is also what's needed to reliably use the Family Controls entitlement below — worth doing for something meant to run every single morning.
 
-## 4. Target user
+## 3. Goals
 
-Someone who has already decided they want this friction — this is an opt-in, self-imposed constraint app, not a surveillance tool. Primary persona: a person who has tried habit-tracking or willpower-based approaches to "move before scrolling" and wants a hard technical enforcement layer instead.
+- Prevent normal phone use (apps, notifications) for a fixed window after the alarm fires — default 30 minutes, configurable.
+- Require a minimum amount of verified physical activity (steps or sustained movement) before the lockout lifts, even if the 30 minutes have elapsed.
+- An alarm that's very hard to defeat: ignores the silent switch and Focus/Do Not Disturb, escalates in volume, survives the app being force-closed or the phone rebooting, and requires an active dismissal task — not a tap — to stop.
+- Configurable activity target, lockout duration, and alarm dismissal challenge.
 
-## 5. Critical platform constraint — read this before scoping anything else
+## 4. Non-goals (v1)
 
-"Doesn't let me use anything until I do X" means blocking access to *other apps*, not just this app. That capability is deliberately and heavily restricted by both mobile OSes, and the two platforms are not equally capable. This determines what's actually buildable:
+- Not a fitness tracker — verifying "did movement happen," not workout metrics.
+- Not blocking a curated list of app categories. v1 blocks everything except the app itself and the emergency dialer, because a partial block is trivially bypassed by opening a non-blocked app.
+- Not App Store distribution, not multi-user, not Android.
 
-### Android
-Feasible, with real device permissions the user must grant once:
-- **Accessibility Service** — lets the app detect when another app comes to the foreground and immediately draw over it / bounce the user back.
-- **`SYSTEM_ALERT_WINDOW` (draw over other apps)** — used to show the full-screen lockout/alarm UI on top of anything, including the lock screen.
-- **Foreground Service + exact alarms (`AlarmManager` / `setAlarmClock`)** — required so the alarm fires reliably even if the app was killed, battery optimization is on, or the phone was rebooted (we also register a `BOOT_COMPLETED` receiver to reschedule).
-- **Device Admin (optional, stronger)** — can prevent uninstalling the app during an active lockout, which closes the most obvious escape hatch ("just delete the app").
-- Google Play policy note: `SYSTEM_ALERT_WINDOW` and Accessibility Service usage both require a clear in-app disclosure and a "why we need this" screen during onboarding, or the app risks rejection/removal. This is a real store-review risk to plan for, not just a permissions prompt.
+## 5. Why iOS can do this now: AlarmKit + Family Controls
 
-### iOS
-Fundamentally more restricted. Apple does not allow third-party apps to block or overlay other apps the way Android allows. The closest official mechanism is the **Screen Time / Family Controls / DeviceActivity framework**, which:
-- Can restrict specific apps/categories on the device, but the entitlement is intended for parental-control use cases and is subject to App Review scrutiny for "self-control" apps (Apple has approved some, e.g. Opal, One Sec — so it's possible, not guaranteed).
-- Cannot fully replicate "block absolutely everything except this app" — it's a shield over selected apps, not a full-device lock.
-- **Guided Access** exists but is a manual accessibility feature the user toggles themselves; it can't be triggered/released programmatically by our app, so it's not a real enforcement mechanism for this product.
-- Alarm reliability on iOS is more constrained too: full silent-switch-bypass audio is achievable (`AVAudioSession` category `.playback` ignores the mute switch), but **Critical Alerts** (bypass Do Not Disturb / Focus entirely) require a special Apple-granted entitlement that is not guaranteed to be approved for a non-medical/non-safety app.
+iOS has historically been the harder platform for exactly this kind of app — third-party apps can't overlay or freely block other apps, and a real "ignore silent mode, full-screen, must dismiss with an action" alarm required either the Critical Alerts entitlement (needs Apple approval, not guaranteed) or fragile local-notification tricks. Two things change that for a personal, sideloaded build:
 
-**Recommendation:** build Android first as the "real" enforcement experience (full lockout + hard-to-kill alarm), and ship iOS as a best-effort companion (Screen Time-based app shielding + non-Critical-Alert loud alarm) with onboarding copy that's honest about the gap. Do not promise "blocks everything" as an iOS claim in the App Store listing — it would misrepresent what's technically possible and risks rejection.
+**AlarmKit (new in iOS 26).** Apple shipped a dedicated framework for exactly this use case — third-party alarms that behave like the built-in Clock app: full volume through the silent switch and Focus modes, full-screen presentation even on the lock screen, survives the app being killed, and is dismissed via an explicit action (button/App Intent) rather than a swipe. This replaces the old "abuse notifications to fake an alarm" approach entirely and is the primary alarm mechanism for this app. **Caveat:** AlarmKit is a newer API and its exact type/method names should be confirmed against current Xcode documentation/autocomplete when implementing — the scaffold in this repo is written to the framework's known shape but hasn't been compiled against the real SDK.
+
+**Family Controls / ManagedSettings / DeviceActivity.** This is Apple's Screen Time framework, and it's what shields other apps during the lockout window. The catch for third parties is normally the *distribution* entitlement — Apple has to approve your app for App Store release under this framework. **That approval is not needed here.** The *development* entitlement (added in Xcode under Signing & Capabilities → Family Controls) works on your own device with your own Apple ID / provisioning profile for apps you build and install yourself — no request-and-wait process. This is the whole reason personal-use-only is a meaningfully easier target than the original cross-platform plan.
+
+Net effect: on a personal iOS build, this app can legitimately do both an unmissable alarm and a real app-blocking lockout, without waiting on Apple approval for anything. The main remaining risk is normal Apple SDK churn (entitlement behavior, exact AlarmKit surface) between now and when this gets built — verify both against current docs at implementation time.
 
 ## 6. Core features
 
-### 6.1 Fail-safe alarm
-- Fires at a user-set time; survives force-quit and reboot (re-registered via native alarm scheduling + boot receiver on Android; local notifications + background audio session on iOS).
-- Ignores the mute/silent switch and ramps from low to full volume over ~60 seconds.
-- Full-screen takeover UI on top of the lock screen (Android) / full-screen local notification (iOS) — no swipe-to-dismiss.
-- **Dismissal requires a task, not a tap.** Configurable dismissal challenges for v1:
-  - Walk a set number of steps within N minutes (uses the same pedometer check as §6.2, so the alarm dismissal *is* the start of the activity gate).
-  - Scan a QR code the user has printed/placed somewhere deliberately inconvenient (bathroom, kitchen) — forces physically getting up and going there.
-  - Solve N escalating math problems.
-- If the dismissal task is abandoned partway, the alarm resumes after a short grace period (default 2 minutes) rather than silencing permanently — this is the "no snooze-and-forget" guarantee.
-- A single, clearly-labeled emergency override exists (e.g., a long-press "Emergency call only" affordance) so the app never blocks access to 911/emergency dialing — this is a legal/safety requirement, not optional.
+### 6.1 Fail-safe alarm (AlarmKit)
+- Fires at a user-set time via `AlarmManager`/`AlarmKit` scheduling; survives force-quit and reboot because the OS — not the app process — owns alarm delivery.
+- Full volume, ignores silent switch and Focus modes; full-screen presentation on the lock screen.
+- **Dismissal requires a task, not a tap.** v1 dismissal challenges:
+  - Walk a set number of steps within N minutes (same pedometer check as §6.2 — dismissing the alarm *is* the start of the activity gate).
+  - Solve N escalating math problems (fallback for when walking isn't possible, e.g. injury).
+- If the dismissal flow is abandoned partway, the alarm resumes after a short grace period (default 2 minutes) — no snooze-and-forget.
+- Emergency calling is never blocked by anything in this app; iOS itself guarantees this at the OS level (emergency SOS is always reachable from the lock screen regardless of any app state).
 
-### 6.2 Morning activity gate
-- After the alarm is dismissed, the app tracks physical activity toward a configurable target (default: 300 steps within 20 minutes, using device pedometer/step-counter APIs — `CMPedometer` on iOS, `Health Connect`/`SensorManager` step counter on Android).
-- Alternative verification modes for users without reliable step-counter hardware/permissions: sustained-accelerometer-motion detection, or a manual "confirm with a photo" fallback (lower trust, flagged as such in-app).
-- The gate only lifts when **both** conditions are met: lockout timer elapsed AND activity target hit. If activity finishes first, the countdown for the remaining lockout time is shown; if the timer finishes first, the app shows remaining activity needed.
+### 6.2 Morning activity gate (CMPedometer / HealthKit)
+- After the alarm is dismissed, tracks physical activity toward a configurable target (default: 300 steps within 20 minutes) using `CMPedometer`.
+- Fallback verification mode (sustained accelerometer motion via `CMMotionActivityManager`) for cases where step data is delayed or unavailable.
+- The gate only lifts when **both** the lockout timer has elapsed **and** the activity target is hit.
 
-### 6.3 30-minute hard lockout
-- Independent of activity — even a very fast walk cannot unlock the phone in under the configured minimum (default 30 min, floor of 5 min / ceiling of 90 min in settings).
-- During lockout: Android shows a full-screen block over any app switch attempt (via Accessibility Service, §5); iOS shields the configured app set via Screen Time.
-- Notifications are held (not delivered/shown) during the lockout window where the platform allows deferring them, and released once the gate lifts.
+### 6.3 30-minute hard lockout (Family Controls / DeviceActivity)
+- Independent of activity — a fast walk can't unlock the phone in under the configured minimum (default 30 min, floor 5 / ceiling 90 in settings).
+- Implemented via `ManagedSettings` app shields covering all apps except this one, applied through a `DeviceActivityMonitor` extension that engages at alarm-dismiss time and releases when the gate is satisfied.
+- Notifications from other apps are held (Screen Time communication/notification limits) during lockout and released once the gate lifts.
 
 ### 6.4 Onboarding & settings
-- One-time setup flow: alarm time, activity target + type, lockout duration, dismissal challenge type, and — critically — an explicit permissions walkthrough explaining *why* each OS permission is requested (this doubles as the store-review disclosure copy).
-- Settings screen to adjust all of the above, plus a "pause for today" affordance that requires a deliberate two-step confirmation (travel days, sickness, etc.) so it isn't a one-tap escape hatch that defeats the app's purpose.
+- One-time setup: alarm time, activity target, lockout duration, dismissal challenge type, and a permissions walkthrough (Family Controls, Motion & Fitness, Notifications) explaining why each is requested.
+- Settings to adjust all of the above, plus a "pause for today" toggle that requires a deliberate two-step confirmation (travel, sickness) so it isn't a one-tap escape hatch.
 
 ## 7. User flow (happy path)
 
-1. Alarm fires at set time, ignoring silent mode, full volume ramp.
-2. User must complete the dismissal challenge (e.g., walk 50 steps) to stop the alarm.
-3. Dismissing the alarm starts the 30-minute lockout + activity-gate screen simultaneously.
-4. App blocks/shields other apps; home screen shows live progress ("18 / 30 min · 140 / 300 steps").
-5. Once both thresholds are met, the app releases the lock, delivers any held notifications, and returns the phone to normal.
+1. Alarm fires at set time via AlarmKit — full volume, ignores silent mode, full-screen on lock screen.
+2. Dismissal requires completing the challenge (e.g., walk 50 steps).
+3. Dismissing the alarm engages the Family Controls shield and starts the 30-minute + activity-gate countdown simultaneously.
+4. Live progress shown in-app ("18 / 30 min · 140 / 300 steps") while other apps are shielded.
+5. Once both thresholds are met, the shield lifts and the phone returns to normal.
 
-## 8. Success metrics
+## 8. Success metrics (personal, informal)
 
-- % of mornings the alarm is dismissed only via the intended challenge (vs. force-quit/uninstall/OS-level workaround detected).
-- Average time-to-first-unlock-app-usage after alarm (directionally, should sit near the lockout floor + activity time, not spike immediately after alarm dismissal — a spike indicates a bypass).
-- 7-day and 30-day retention of the lockout feature being left enabled (not paused/disabled).
-- Crash-free rate for the alarm-scheduling path specifically (this is the feature that cannot be allowed to silently fail).
+Since this is single-user, "metrics" are really just self-check questions:
+- Did the alarm actually wake me up and get dismissed only via the real challenge (not a workaround)?
+- Did I end up using the phone before both thresholds were met on any morning (a bypass, worth investigating how)?
+- Did the app survive reboots/force-quits without needing manual re-setup?
 
 ## 9. MVP scope
 
-**In:** Android full implementation (alarm, lockout, accessibility-service app-block, step-based activity gate, QR/step/math dismissal challenges), iOS best-effort implementation (alarm without Critical Alerts, Screen Time app shielding, step-based activity gate), onboarding, settings, emergency-call override.
+**In:** AlarmKit-based alarm with steps/math dismissal challenge, Family Controls app shield for the lockout window, CMPedometer-based activity gate, onboarding/permissions flow, settings.
 
-**Out of MVP, later phases:** widgets/lock-screen complications, activity history/stats dashboard, social/accountability features (streaks shared with friends), Apple Watch / Wear OS companion for step verification without carrying the phone, Critical Alerts entitlement application to Apple.
+**Out of v1:** Live Activity/Dynamic Island polish beyond what AlarmKit provides by default, Apple Watch companion for step verification without carrying the phone, activity history/stats, Android (not planned at all now).
 
 ## 10. Risks & open questions
 
-- **App Store approval risk (iOS):** self-control apps using Screen Time have been approved before, but review outcomes for "blocking" behavior are not guaranteed and can change. Needs validation with a TestFlight submission early, not after full build-out.
-- **Android battery optimization:** OEM-specific "aggressive battery saver" modes (Xiaomi, Huawei, some Samsung configs) can kill background/foreground services despite correct API usage. Needs device-specific testing and in-app guidance to whitelist the app.
-- **Bypass paths to close explicitly:** airplane mode, uninstall-during-lockout, second device, factory reset, SIM removal. v1 cannot prevent all of these (this is a self-imposed-friction tool, not device-management-grade lockdown) — PRD explicitly scopes to deterring casual bypass, not defeating a determined user with full device access. This should be stated in-app so expectations are set correctly.
-- **Accessibility/step-counter permission denial:** need a graceful degraded mode (manual confirmation, clearly marked lower-trust) rather than the app becoming unusable if a permission is refused.
-- **Open question:** should the activity target adapt (e.g., lower on days with a logged workout already, or weather-aware for outdoor activity types) — deferred, flagged for v1.1 discussion.
+- **AlarmKit is new** (iOS 26) — exact API surface should be verified against current Xcode docs when implementing; treat the scaffold's `AlarmScheduler` as a best-effort sketch, not verified-working code.
+- **Minimum iOS version is 26** — fine for a personal device you control, but means this can't be built for an older iPhone without falling back to the weaker local-notification approach.
+- **Family Controls development entitlement** — expected to work without Apple's approval process for a self-signed build, but Apple's entitlement behavior has changed before and should be double-checked at build time (Signing & Capabilities → Family Controls, development profile).
+- **Bypass paths this doesn't try to close:** a second device, deleting the app then reinstalling from a backup that predates lockout, restoring the phone, airplane-mode-then-back edge cases in DeviceActivity scheduling. This is a self-imposed-friction tool against casual bypass (rolling out of bed and scrolling), not a device-management-grade lock against a fully determined attempt to defeat your own phone.
+- **7-day free provisioning** — if not enrolled in the paid Developer Program, the build needs manual reinstall from Xcode weekly, which will break the "every morning" reliability goal. Recommend enrolling.
 
-## 11. Technical approach (high level)
+## 11. Technical approach
 
-Cross-platform app shell in React Native (Expo, bare/prebuild workflow — not managed Expo Go, since native modules for Accessibility Service, foreground services, exact alarms, and Screen Time are required and are outside what managed Expo exposes). Native modules needed per platform:
+Native Swift/SwiftUI app, iOS 26+ deployment target, single Xcode project (this repo includes an `XcodeGen` `project.yml` so the `.xcodeproj` doesn't need to be hand-maintained/committed — run `xcodegen generate` to produce it).
 
-- **Android:** Kotlin native module wrapping `AccessibilityService`, `SYSTEM_ALERT_WINDOW` overlay, `AlarmManager`/`setAlarmClock`, `BOOT_COMPLETED` receiver, foreground `Service`, step counter via `Health Connect` (fallback `TYPE_STEP_COUNTER` sensor).
-- **iOS:** Swift native module wrapping `AVAudioSession` (playback category), local notifications with a full-screen intent-equivalent (time-sensitive interruption level), `FamilyControls`/`ManagedSettings`/`DeviceActivity` for app shielding, `CMPedometer` for steps.
-- Shared TypeScript app layer: navigation, state (alarm config, lockout state machine, activity progress), UI.
+- **Alarm:** `AlarmScheduler` wraps AlarmKit — schedule, cancel, and the dismissal-action wiring.
+- **Activity:** `ActivityMonitor` wraps `CMPedometer` (primary) and `CMMotionActivityManager` (fallback).
+- **Lockout/shield:** `AppShield` wraps `FamilyControls` authorization, `ManagedSettings` app shielding, and a `DeviceActivityMonitor` extension target that owns engaging/releasing the shield on its own schedule (so it works even if the main app isn't running).
+- **App layer:** SwiftUI views (`HomeView`, `AlarmView`, `GateView`, `SettingsView`, `OnboardingView`) backed by a single `AppViewModel` (`ObservableObject`) and a `LockoutSettings` model persisted via `UserDefaults`/`AppStorage`.
 
-This repo currently contains the PRD and a scaffolded TypeScript/React Native app shell (screens, state, and typed service interfaces) reflecting this architecture. The native-module implementations are stubbed with clear TODOs — they require a bare React Native project (not Expo Go) and platform-specific native code that should be built next, per platform, starting with Android as scoped in §5.
+This repo contains the PRD and a Swift/SwiftUI scaffold matching this architecture: models, an `AppViewModel`, SwiftUI views for the full flow, and service protocols (`AlarmScheduling`, `ActivityMonitoring`, `AppShielding`) with best-effort implementations against AlarmKit/CMPedometer/FamilyControls. It has not been compiled — there's no macOS/Xcode toolchain available in the environment this was written in — so the next step is opening it in Xcode on a Mac, fixing whatever doesn't compile against the real SDKs, and building to a physical device (Family Controls and real alarm-while-locked behavior can't be fully verified in Simulator).

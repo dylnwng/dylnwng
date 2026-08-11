@@ -1,45 +1,60 @@
 # Morning Lockout
 
-A phone app that gates normal phone use behind two conditions every morning: a fixed lockout window (default 30 minutes) and a verified minimum amount of physical activity — plus a fail-safe alarm that requires completing a task, not a tap, to dismiss.
+A personal iOS app: no phone use for the first 30 minutes of the day, and not before I've walked a minimum number of steps — enforced with a real alarm that can't be silenced or tapped away.
 
-Full product spec: [`PRD.md`](./PRD.md). Read §5 ("Critical platform constraint") first — iOS and Android support fundamentally different levels of enforcement, and the PRD explains why and what that means for scope.
+Full spec: [`PRD.md`](./PRD.md). Read §5 first — it's the reason this is a realistic personal project now: AlarmKit (new in iOS 26) gives a real unstoppable alarm, and Family Controls' *development* entitlement (no Apple approval needed, unlike the App Store distribution version) gives a real app-blocking shield, both usable on a build you sign and install to your own phone from Xcode.
 
 ## Status
 
-This is an early scaffold, not a working app yet:
+Scaffold, not a working app yet:
 
 - ✅ PRD
-- ✅ TypeScript app shell: navigation (Home → Alarm → Gate → Settings), Zustand state store, and typed service interfaces for the three native-dependent capabilities (alarm, activity tracking, app lockout)
-- ⬜ Native modules — `alarmService`, `activityService`, and `lockoutService` (see `src/services/`) are stubbed with `TODO`s. Making the app actually alarm/block/verify-steps requires bare-workflow native code per platform (Kotlin on Android, Swift on iOS) — see PRD §11 for the specific APIs each one needs.
-
-The screens run today (in-memory, with a dev-only "+10 steps" button standing in for the real pedometer) so the flow and state machine can be reviewed and iterated on before native work starts.
+- ✅ Swift/SwiftUI app structure: models, `AppViewModel`, all four screens (Onboarding, Home, Alarm, Gate, Settings), and service protocols for the three system-framework integrations
+- ✅ `DeviceActivityMonitor` extension target (`MorningLockoutMonitor`) so the shield survives the main app not running
+- ⬜ **Not compiled.** This was written without access to Xcode/macOS, so treat it as a first draft to open in Xcode and fix up against the real SDKs — particularly `AlarmScheduler.swift` (AlarmKit is new and its exact API surface should be checked against current docs) and the `.all(except:)` call in `AppShield.swift`.
 
 ## Setup
 
+Requires a Mac with Xcode (26+, for AlarmKit) and a personal Apple ID.
+
 ```bash
-npm install
-npx expo prebuild   # generates ios/ and android/ — required, this is NOT usable in Expo Go
-npm run android      # or: npm run ios
+brew install xcodegen
+cd morning-lockout
+xcodegen generate     # turns project.yml into MorningLockout.xcodeproj
+open MorningLockout.xcodeproj
 ```
 
-`expo prebuild` is required (not `expo start` in Expo Go) because the accessibility-service overlay, exact alarm scheduling, and Screen Time integration all need native modules that Expo Go doesn't support.
+Then in Xcode:
+1. Select the `MorningLockout` target → Signing & Capabilities → set your personal team.
+2. Confirm the `Family Controls` capability is present (it's declared in `project.yml`'s entitlements block, but double-check it shows up after signing).
+3. Build to a physical device — Family Controls and real alarm-while-locked behavior don't work meaningfully in Simulator.
+4. During onboarding in the running app, use the "Select this app" picker so `AppShield` knows not to shield itself.
+
+**Free Apple ID vs. paid Developer Program:** a free account signs and installs fine, but the build expires after 7 days and needs reinstalling from Xcode. For something meant to run every morning, the $99/year Developer Program (1-year signing) is worth it — and per PRD §10, may also matter for how reliably the Family Controls entitlement behaves.
+
+`.xcodeproj` is not committed — it's generated from `project.yml` via XcodeGen so the project file (which is a pain to diff/merge) doesn't need to live in git. Re-run `xcodegen generate` after pulling changes to `project.yml`.
 
 ## Project layout
 
 ```
-PRD.md                    product spec — read this first
-App.tsx                   entry point
-src/
-  navigation/              stack: Home, Alarm, Gate, Settings
-  screens/                 one file per screen
-  services/                platform-contract interfaces (alarmService, activityService, lockoutService) — currently stubbed, need native modules
-  state/                   Zustand store: settings, current phase, gate progress
-  types/                   shared types + the gate-satisfaction rule
+PRD.md
+project.yml                        XcodeGen spec — generates the .xcodeproj
+MorningLockout/                    main app target
+  MorningLockoutApp.swift          @main entry point
+  Models/                          LockoutSettings, GateProgress
+  ViewModels/AppViewModel.swift    phase state machine, ties the three services together
+  Views/                           RootView + Onboarding/Home/Alarm/Gate/Settings
+  Services/
+    AlarmScheduler.swift           AlarmKit wrapper — needs SDK verification, see file header
+    ActivityMonitor.swift          CMPedometer (primary) + CMMotionActivityManager (fallback)
+    AppShield.swift                FamilyControls/ManagedSettings — the app-blocking shield
+MorningLockoutMonitor/             DeviceActivityMonitor extension target
+  ShieldMonitor.swift              keeps the shield enforced independent of the main app
 ```
 
 ## Next steps (in order)
 
-1. Validate the iOS Screen Time / self-control app approval path early (TestFlight submission), since it's the biggest source of scope risk (PRD §10).
-2. Build the Android native module first (`AccessibilityService` + overlay + `AlarmManager` + boot receiver) — it's the platform where "block everything" is actually achievable, and it's the deeper technical risk to de-risk first.
-3. Wire real step counting (`Health Connect` / `CMPedometer`) into `activityService` to replace the dev-only step simulator on the Alarm screen.
-4. Build the iOS native module (`AVAudioSession` + `FamilyControls`/`DeviceActivity`) as a best-effort companion.
+1. `xcodegen generate`, open in Xcode, fix whatever doesn't compile against the real AlarmKit/FamilyControls SDKs.
+2. Get the Family Controls picker + `.all(except:)` shield policy actually excluding this app's own token — that's the piece most likely to need a different exact API than what's sketched here.
+3. Build to your iPhone, enable the Developer Program if you haven't, and test one real morning end-to-end (alarm → dismissal challenge → gate → unlock) before trusting it daily.
+4. Once the core loop works, revisit the math-challenge dismissal fallback and the "pause for today" two-step confirmation from PRD §6.4 — both are in the spec but not yet in the scaffold.
