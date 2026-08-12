@@ -6,12 +6,11 @@ import AlarmKit
 /// even when locked. See PRD.md §5/§6.1 for why this replaces the old
 /// "fake an alarm with local notifications" approach.
 ///
-/// NOTE: AlarmKit is a new framework. The exact type/method names below
-/// (`AlarmManager`, `AlarmConfiguration`, `AlarmAttributes`, etc.) are written
-/// to the framework's known shape from its WWDC25 introduction, but this file
-/// has not been compiled against the real SDK — treat it as a best-effort
-/// sketch and fix up against Xcode's autocomplete/current AlarmKit docs
-/// before relying on it.
+/// Verified against the real iOS 26.5 SDK via CI (macos-26 runner, Xcode 26.6).
+/// Two spots differed from the WWDC25-era sketch this was first written against:
+/// `Recurrence` has no `.daily` case (only `.never`/`.weekly([Locale.Weekday])`), and
+/// `AlarmConfiguration` has no plain `init(schedule:attributes:stopIntent:)` — use the
+/// `.alarm(...)` factory, which also requires `secondaryIntent`/`sound`.
 protocol AlarmScheduling {
     /// Requests the AlarmKit authorization prompt. Must succeed before scheduling.
     func requestAuthorization() async throws -> Bool
@@ -41,7 +40,9 @@ final class AlarmScheduler: AlarmScheduling {
                     hour: settings.alarmTime.hour ?? 6,
                     minute: settings.alarmTime.minute ?? 30
                 ),
-                repeats: .daily
+                // Recurrence has no .daily case — only .never and .weekly([Locale.Weekday]),
+                // and Locale.Weekday isn't CaseIterable, so "every day" means spelling out all 7.
+                repeats: .weekly([.sunday, .monday, .tuesday, .wednesday, .thursday, .friday, .saturday])
             )
         )
 
@@ -56,12 +57,17 @@ final class AlarmScheduler: AlarmScheduling {
             tintColor: .red
         )
 
-        let configuration = AlarmManager.AlarmConfiguration(
+        // AlarmConfiguration has no plain init(schedule:attributes:stopIntent:) — the real
+        // initializers/factories all also require secondaryIntent and sound. .alarm(...) is
+        // the scheduled (non-countdown) factory, which fits this use case.
+        let configuration = AlarmManager.AlarmConfiguration.alarm(
             schedule: schedule,
             attributes: attributes,
             // Do not offer a native "stop" tap target — dismissal must go through the
             // in-app challenge screen (AlarmView), not AlarmKit's default stop button.
-            stopIntent: nil
+            stopIntent: nil,
+            secondaryIntent: nil,
+            sound: .default
         )
 
         _ = try await AlarmManager.shared.schedule(id: Self.alarmID, configuration: configuration)
