@@ -1,0 +1,5 @@
+*.xcodeproj/
+MorningLockout/Info.plist
+MorningLockout/MorningLockout.entitlements
+MorningLockoutMonitor/Info.plist
+MorningLockoutMonitor/MorningLockoutMonitor.entitlements
