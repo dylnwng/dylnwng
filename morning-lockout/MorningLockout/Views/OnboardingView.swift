@@ -37,6 +37,9 @@ struct OnboardingView: View {
             Button("Select this app (so it isn't shielded)") { showingPicker = true }
                 .buttonStyle(.bordered)
                 .familyActivityPicker(isPresented: $showingPicker, selection: $selection)
+                .onChange(of: selection) { _, newSelection in
+                    AppGroupStore.saveOwnAppSelection(newSelection)
+                }
 
             if let permissionError {
                 Text(permissionError).font(.caption).foregroundStyle(.red)

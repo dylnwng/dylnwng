@@ -26,6 +26,7 @@ final class AppViewModel: ObservableObject {
     private let activityMonitor: ActivityMonitoring
     private let appShield: AppShielding
     private var lockoutTimer: Timer?
+    private var alarmObservationTask: Task<Void, Never>?
 
     private static let settingsKey = "morningLockout.settings"
     private static let pausedDateKey = "morningLockout.pausedDate"
@@ -45,6 +46,24 @@ final class AppViewModel: ObservableObject {
         self.alarmScheduler = alarmScheduler
         self.activityMonitor = activityMonitor
         self.appShield = appShield
+
+        beginObservingAlarms()
+    }
+
+    /// Connects AlarmKit's alerting-state stream to alarmDidFire(alarmID:) — without this, an
+    /// alarm could ring at the OS level and the app would never leave .idle to show AlarmView.
+    /// Started once here at launch (covers both a cold launch from the alert and the app already
+    /// running when it fires) rather than requiring call sites to remember to wire it up.
+    private func beginObservingAlarms() {
+        alarmObservationTask?.cancel()
+        alarmObservationTask = Task { [weak self] in
+            guard let self else { return }
+            for await id in self.alarmScheduler.alertingAlarmIDs {
+                let alreadyHandling = self.currentAlarmID == id && self.phase != .idle && self.phase != .unlocked
+                guard !alreadyHandling else { continue }
+                self.alarmDidFire(alarmID: id)
+            }
+        }
     }
 
     var isPausedToday: Bool {

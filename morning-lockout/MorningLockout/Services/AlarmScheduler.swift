@@ -23,6 +23,12 @@ protocol AlarmScheduling {
 
     /// Stops the currently-ringing alarm. Only call this after the dismissal challenge is actually completed.
     func stopRinging(alarmID: UUID) async throws
+
+    /// Emits an alarm's ID each time it transitions into AlarmKit's .alerting (currently firing)
+    /// state. This is what actually connects an alarm ringing to the in-app dismissal-challenge
+    /// flow — AppViewModel observes this stream and calls alarmDidFire(alarmID:) on each new ID;
+    /// nothing else calls alarmDidFire.
+    var alertingAlarmIDs: AsyncStream<UUID> { get }
 }
 
 final class AlarmScheduler: AlarmScheduling {
@@ -74,11 +80,26 @@ final class AlarmScheduler: AlarmScheduling {
     }
 
     func cancel() async throws {
-        try await AlarmManager.shared.cancel(id: Self.alarmID)
+        // cancel(id:)/stop(id:) are synchronous throws, not async — no `await` needed.
+        try AlarmManager.shared.cancel(id: Self.alarmID)
     }
 
     func stopRinging(alarmID: UUID) async throws {
-        try await AlarmManager.shared.stop(id: alarmID)
+        try AlarmManager.shared.stop(id: alarmID)
+    }
+
+    var alertingAlarmIDs: AsyncStream<UUID> {
+        AsyncStream { continuation in
+            let task = Task {
+                for await alarms in AlarmManager.shared.alarmUpdates {
+                    for alarm in alarms where alarm.state == .alerting {
+                        continuation.yield(alarm.id)
+                    }
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 }
 

@@ -16,6 +16,7 @@ targets:
     platform: iOS
     sources:
       - path: MorningLockout
+      - path: Shared
     info:
       path: MorningLockout/Info.plist
       properties:
@@ -26,6 +27,7 @@ targets:
       path: MorningLockout/MorningLockout.entitlements
       properties:
         com.apple.developer.family-controls: true
+        com.apple.security.application-groups: [group.com.dylnwng.morninglockout]
     dependencies:
       - target: MorningLockoutMonitor
         embed: true
@@ -39,6 +41,7 @@ targets:
     platform: iOS
     sources:
       - path: MorningLockoutMonitor
+      - path: Shared
     info:
       path: MorningLockoutMonitor/Info.plist
       properties:
@@ -49,6 +52,7 @@ targets:
       path: MorningLockoutMonitor/MorningLockoutMonitor.entitlements
       properties:
         com.apple.developer.family-controls: true
+        com.apple.security.application-groups: [group.com.dylnwng.morninglockout]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.dylnwng.morninglockout.monitor

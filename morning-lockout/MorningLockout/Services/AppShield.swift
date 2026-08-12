@@ -62,9 +62,6 @@ final class AppShield: AppShielding {
     }
 
     private func ownAppTokenSet() -> Set<ApplicationToken> {
-        // TODO: populate from the FamilyActivitySelection captured during onboarding
-        // (the user picks "this app" in a FamilyActivityPicker so its token is known —
-        // there's no API to identify your own app's token without that selection step).
-        []
+        AppGroupStore.ownApplicationTokens()
     }
 }

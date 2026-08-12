@@ -12,8 +12,10 @@ class ShieldMonitor: DeviceActivityMonitor {
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
         // The main app already engages the shield synchronously when the alarm is dismissed
-        // (AppShield.engage()); this is the reboot/background-relaunch safety net.
-        store.shield.applicationCategories = .all()
+        // (AppShield.engage()); this is the reboot/background-relaunch safety net. Must exclude
+        // this app's own token the same way AppShield.engage() does — otherwise this path shields
+        // Morning Lockout too, locking the user out of the unlock UI it's supposed to show.
+        store.shield.applicationCategories = .all(except: AppGroupStore.ownApplicationTokens())
         store.shield.webDomainCategories = .all()
     }
 
