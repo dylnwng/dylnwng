@@ -26,13 +26,11 @@ on:
 
 jobs:
   build:
-    # Update this if GitHub's macOS runner images move past what's available when
-    # you're reading this — `xcodebuild -version` in the logs will tell you what
-    # actually got picked. iOS 26 / AlarmKit needs an Xcode version that ships the
-    # iOS 26 SDK; if this runner's preinstalled Xcode is older than that, the build
-    # step below will fail with a clear "SDK not found" style error rather than
-    # something confusing.
-    runs-on: macos-15
+    # Needs a runner whose preinstalled Xcode ships the iOS 26 SDK (AlarmKit).
+    # macos-15 only has Xcode 16.x — bumped to macos-26, which has Xcode 26.6 /
+    # iOS 26.5 SDK as of 2026-08. `xcodebuild -version` in the logs confirms
+    # whatever's actually picked if GitHub's images move again.
+    runs-on: macos-26
 
     defaults:
       run:
